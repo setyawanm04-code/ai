@@ -1,6 +1,6 @@
-// AI provider abstraction. Gemini is primary; OpenRouter is an optional fallback.
-// Both API keys live only in server environment variables — see .env.example.
-// This module is imported exclusively by files under /api, never by /src.
+// AI provider abstraction. Gemini is the documented default; OpenAI and OpenRouter
+// are supported alternates. All API keys live only in server environment variables
+// — see .env.example. This module is imported exclusively by files under /api, never by /src.
 
 export interface GenerateOptions {
   systemInstruction?: string;
@@ -62,6 +62,52 @@ export const GeminiProvider: AIProvider = {
   },
 };
 
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+export const OpenAIProvider: AIProvider = {
+  name: "openai",
+  isConfigured() {
+    return Boolean(process.env.OPENAI_API_KEY);
+  },
+  async generateText(prompt, opts = {}) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new ProviderUnavailableError(
+        "OPENAI_API_KEY is not configured on the server. AI features are unavailable until this is set."
+      );
+    }
+
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [
+          ...(opts.systemInstruction ? [{ role: "system", content: opts.systemInstruction }] : []),
+          { role: "user", content: prompt },
+        ],
+        max_tokens: opts.maxOutputTokens ?? 2048,
+        temperature: opts.temperature ?? 0.7,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new ProviderError(`OpenAI request failed (${res.status}): ${errText.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content ?? "";
+    if (!text) {
+      throw new ProviderError("OpenAI returned an empty response.");
+    }
+    return text;
+  },
+};
+
 export const OpenRouterProvider: AIProvider = {
   name: "openrouter",
   isConfigured() {
@@ -99,23 +145,35 @@ export const OpenRouterProvider: AIProvider = {
   },
 };
 
-/** Picks Gemini first, falls back to OpenRouter only if configured. */
+/**
+ * Tries each configured provider in order and returns the first success.
+ * Order: Gemini → OpenAI → OpenRouter. Only providers with a set API key are
+ * attempted — an unconfigured provider is skipped, never silently faked.
+ * Set AI_PROVIDER=openai (or "gemini" / "openrouter") to force a specific one first.
+ */
 export async function generateWithFallback(prompt: string, opts?: GenerateOptions): Promise<{ text: string; provider: string }> {
-  if (GeminiProvider.isConfigured()) {
+  const all: AIProvider[] = [GeminiProvider, OpenAIProvider, OpenRouterProvider];
+
+  const forced = process.env.AI_PROVIDER?.toLowerCase();
+  const ordered = forced
+    ? [...all.filter((p) => p.name === forced), ...all.filter((p) => p.name !== forced)]
+    : all;
+
+  let lastErr: unknown;
+  for (const provider of ordered) {
+    if (!provider.isConfigured()) continue;
     try {
-      const text = await GeminiProvider.generateText(prompt, opts);
-      return { text, provider: "gemini" };
+      const text = await provider.generateText(prompt, opts);
+      return { text, provider: provider.name };
     } catch (err) {
-      if (!OpenRouterProvider.isConfigured()) throw err;
-      // fall through to OpenRouter
+      lastErr = err;
+      // try the next configured provider
     }
   }
-  if (OpenRouterProvider.isConfigured()) {
-    const text = await OpenRouterProvider.generateText(prompt, opts);
-    return { text, provider: "openrouter" };
-  }
+
+  if (lastErr) throw lastErr;
   throw new ProviderUnavailableError(
-    "No AI provider is configured. Set GEMINI_API_KEY (and optionally OPENROUTER_API_KEY) on the server."
+    "No AI provider is configured. Set GEMINI_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY on the server."
   );
 }
 

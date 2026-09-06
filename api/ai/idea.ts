@@ -1,6 +1,6 @@
-import { requireUser, AuthError, getAdminClient } from "../lib/auth.js";
-import { generateWithFallback, ProviderUnavailableError } from "../lib/providers.js";
-import { checkRateLimit, validateInputSize } from "../lib/limits.js";
+import { requireUser, AuthError, getAdminClient } from "../../lib/auth.js";
+import { generateWithFallback, ProviderUnavailableError } from "../../lib/providers.js";
+import { checkRateLimit, validateInputSize } from "../../lib/limits.js";
 
 export const config = { runtime: "edge" };
 
