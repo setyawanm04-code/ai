@@ -7,7 +7,7 @@ export function getAdminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new Error("CONFIGURATION_REQUIRED: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set.");
+    throw new ConfigError("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY is not set on the server.");
   }
   return createClient(url, key, { auth: { persistSession: false } });
 }
@@ -24,7 +24,7 @@ export async function requireUser(req: Request): Promise<{ id: string; email?: s
     throw new AuthError("Missing authentication token.");
   }
 
-  const admin = getAdminClient();
+  const admin = getAdminClient(); // throws ConfigError if server env vars are missing — do not catch as AuthError
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) {
     throw new AuthError("Invalid or expired session.");
@@ -33,3 +33,5 @@ export async function requireUser(req: Request): Promise<{ id: string; email?: s
 }
 
 export class AuthError extends Error {}
+/** Thrown when required server environment variables are missing — distinct from a bad user session. */
+export class ConfigError extends Error {}

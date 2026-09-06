@@ -1,4 +1,4 @@
-import { requireUser, AuthError, getAdminClient } from "../_lib/auth";
+import { requireUser, AuthError, ConfigError, getAdminClient } from "../_lib/auth";
 import { generateWithFallback, ProviderUnavailableError } from "../_lib/providers";
 import { checkRateLimit, validateInputSize, LIMITS } from "../_lib/limits";
 
@@ -52,6 +52,9 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     user = await requireUser(req);
   } catch (err) {
+    if (err instanceof ConfigError) {
+      return json({ error: "CONFIGURATION_REQUIRED", message: `Server is missing configuration: ${err.message}` }, 503);
+    }
     if (err instanceof AuthError) return json({ error: err.message }, 401);
     return json({ error: "Authentication failed." }, 401);
   }

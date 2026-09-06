@@ -12,7 +12,7 @@ This repository is a real, working foundation for that product, built on a free-
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS + React Router + Monaco Editor
 - **Backend:** Vercel Serverless Functions (`/api`)
 - **Data/Auth:** Supabase (PostgreSQL + Auth), Row Level Security on every user-owned table
-- **AI:** Gemini API (primary), OpenRouter (optional fallback) — both keys are server-only
+- **AI:** Gemini API (default), OpenAI or OpenRouter as alternates — all keys are server-only, tried in order (Gemini → OpenAI → OpenRouter), or forced with `AI_PROVIDER`
 - **Repo/Deploy:** GitHub + Vercel
 
 No VPS, no paid database, no Docker server, no Redis server, and no dedicated execution server are required to run the core app.
@@ -37,7 +37,11 @@ VITE_SUPABASE_ANON_KEY=...
 SUPABASE_URL=...
 SUPABASE_SERVICE_ROLE_KEY=...
 GEMINI_API_KEY=...
+# or, instead:
+# OPENAI_API_KEY=...
 ```
+
+Only one provider key is required. If you set more than one, `api/_lib/providers.ts` tries them in order (Gemini → OpenAI → OpenRouter) and falls through on failure. Force a specific one with `AI_PROVIDER=openai` (or `gemini` / `openrouter`).
 
 `VITE_`-prefixed variables are the only ones exposed to the browser. Never put a secret behind that prefix.
 
@@ -76,10 +80,10 @@ This distinction is deliberate and matches the product's own design rule: *never
 ## 3. Security notes
 
 - `GEMINI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and GitHub secrets are read only inside `/api/**`, which runs server-side. They are never bundled into client code.
-- Every AI endpoint verifies the caller's Supabase session token server-side (`api/lib/auth.ts`) — a request can't claim to be a different user.
+- Every AI endpoint verifies the caller's Supabase session token server-side (`api/_lib/auth.ts`) — a request can't claim to be a different user.
 - Project membership is re-checked server-side before any project-scoped AI request is answered.
 - Untrusted content (project files, user-typed ideas) is explicitly separated from system instructions in every prompt sent to Gemini, to resist prompt injection.
-- Rate limiting and input-size limits are enforced server-side (`api/lib/limits.ts`) and are never trusted from the client. The current implementation is in-memory per function instance — durable, cross-instance limiting needs an external store (e.g. Upstash Redis), which is optional, not required.
+- Rate limiting and input-size limits are enforced server-side (`api/_lib/limits.ts`) and are never trusted from the client. The current implementation is in-memory per function instance — durable, cross-instance limiting needs an external store (e.g. Upstash Redis), which is optional, not required.
 
 ## 4. Extending this scaffold
 
